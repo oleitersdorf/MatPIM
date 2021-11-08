@@ -145,10 +145,10 @@ class Simulator:
 
             if operation.gateDirection == GateDirection.IN_ROW:
                 self.memory[mask, operation.outputs[0]] = torch.bitwise_and(self.memory[mask, operation.outputs[0]],
-                torch.bitwise_nor(self.memory[mask, operation.inputs[0]], self.memory[mask, operation.inputs[1]]))
+                torch.bitwise_not(torch.bitwise_or(self.memory[mask, operation.inputs[0]], self.memory[mask, operation.inputs[1]])))
             else:
                 self.memory[operation.outputs[0], mask] = torch.bitwise_and(self.memory[operation.outputs[0], mask],
-                torch.bitwise_nor(self.memory[operation.inputs[0], mask], self.memory[operation.inputs[1], mask]))
+                torch.bitwise_not(torch.bitwise_or(self.memory[operation.inputs[0], mask], self.memory[operation.inputs[1], mask])))
 
         elif operation.gateType == GateType.NAND:
 
@@ -179,7 +179,7 @@ class Simulator:
                                      ))))
             else:
                 self.memory[operation.outputs[0], mask] = torch.bitwise_and(self.memory[operation.outputs[0], mask],
-                torch.bitwise_nor(self.memory[operation.inputs[0], mask], self.memory[operation.inputs[1], mask]))
+                torch.bitwise_not(torch.bitwise_or(self.memory[operation.inputs[0], mask], self.memory[operation.inputs[1], mask])))
 
         elif operation.gateType == GateType.INIT0:
 
