@@ -47,16 +47,6 @@ class Operation:
         self.outputs = outputs
         self.mask = mask
 
-    def getEnergy(self):
-        """
-        Returns the energy (gate count) in the overall operation
-        :return:
-        """
-        if self.mask is None:
-            return r if (self.gateDirection == GateDirection.IN_ROW) else c
-        else:
-            return len(self.mask)
-
 
 class ParallelOperation:
     """
@@ -126,8 +116,12 @@ class Simulator:
         """
 
         for op in parallelOp.ops:
-            performOperation(op)
-            self.energy += op.getEnergy()
+            self.performOperation(op)
+            # Update energy
+            if op.mask is None:
+                self.energy += self.r if (op.gateDirection == GateDirection.IN_ROW) else self.c
+            else:
+                self.energy += len(op.mask)
         self.latency += 1
 
     def performOperation(self, operation: Operation):
