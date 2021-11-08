@@ -88,6 +88,7 @@ class Simulator:
         # Initialize the memory
         self.r = sum(row_partition_sizes)
         self.c = sum(col_partition_sizes)
+        self.device = device
         self.memory = torch.zeros(self.r, self.c, dtype=torch.bool, device=device)
 
         # Initialize the partition address translation
