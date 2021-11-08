@@ -4,17 +4,23 @@ from simulator import Simulator, ParallelOperation, Operation, GateType, GateDir
 
 def FullPrecisionMV(sim: Simulator, m: int, n: int):
 
-    # Construct random integer matrix and vector
-    A = torch.zeros(size=(m, n), dtype=torch.long, device=sim.device)
+    # Clone x along rows
     x = torch.zeros(size=(n,), dtype=torch.long, device=sim.device)
-
-    # Store the vectors in the memory
-    for i in range(m):
-        for j in range(n):
-            A[i, j] = sim.loadIntegerStrided(j, i)
     for j in range(n):
         x[j] = sim.loadIntegerStrided(n + j, 0)
-
-    Ax = torch.matmul(A, x)
     for i in range(m):
-        sim.storeIntegerStrided(Ax[i].item(), 2 * n, i)
+        for j in range(n):
+            sim.storeIntegerStrided(x[j], n + j, i)
+
+    # Perform inner product in parallel
+    for i in range(m):
+
+        my_a = torch.zeros(size=(n,), dtype=torch.long, device=sim.device)
+        my_x = torch.zeros(size=(n,), dtype=torch.long, device=sim.device)
+        for j in range(n):
+            my_a[j] = sim.loadIntegerStrided(j, i)
+            my_x[j] = sim.loadIntegerStrided(n + j, i)
+
+        my_ax = torch.dot(my_a, my_x)
+
+        sim.storeIntegerStrided(my_ax.item(), 2 * n, i)
