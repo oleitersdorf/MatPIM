@@ -1,6 +1,6 @@
 import torch
-from simulator import Simulator
-from MatPIM import FullPrecisionMV
+from Simulator.simulator import Simulator
+from MatPIM.FullPrecisionMV import FullPrecisionMV
 
 N = 32
 

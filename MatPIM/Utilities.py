@@ -1,6 +1,6 @@
-import torch
 from typing import List
-from simulator import Simulator, ParallelOperation, Operation, GateType, GateDirection
+from Simulator.simulator import Simulator
+from MatPIM.Utilities import *
 
 
 def Move(sim: Simulator, a: int, b: int, mask=None):
@@ -13,7 +13,6 @@ def Move(sim: Simulator, a: int, b: int, mask=None):
     """
 
     for i in mask:
-
         sim.storeIntegerStrided(sim.loadIntegerStrided(a, i), b, i)
 
     # TODO
@@ -30,7 +29,7 @@ def VCOPY(sim: Simulator, a_s: List[int], b_s: List[int], regs: List[int]):
     :param regs: the registers to move
     """
 
-    assert(len(a_s) == len(b_s))
+    assert (len(a_s) == len(b_s))
 
     for a, b in zip(a_s, b_s):
         for reg in regs:
@@ -58,6 +57,27 @@ def VBroadcast(sim: Simulator, a: int, b_s: List[int], regs: List[int]):
     sim.energy += len(b_s) * len(regs) * 32
 
 
+def XNOR(sim: Simulator, a: int, b: int, z: int, mask=None):
+    """
+    Performs a row-parallel XNOR on numbers stored in indices a and b, storing the result in z.
+    :param sim: the simulation environment
+    :param a: the intra-partition index of the first number
+    :param b: the intra-partition index of the second number
+    :param z: the intra-partition index of the output
+    :param mask: the row mask
+    """
+
+    for i in mask:
+        a_val = sim.loadIntegerStrided(a, i)
+        b_val = sim.loadIntegerStrided(b, i)
+
+        sim.storeIntegerStrided(~(a_val ^ b_val), z, i)
+
+    # TODO
+    sim.latency += 2
+    sim.energy += 64
+
+
 def Add(sim: Simulator, a: int, b: int, z: int, mask=None):
     """
     Performs a row-parallel addition on numbers stored in indices a and b, storing the result in z.
@@ -69,7 +89,6 @@ def Add(sim: Simulator, a: int, b: int, z: int, mask=None):
     """
 
     for i in mask:
-
         a_val = sim.loadIntegerStrided(a, i)
         b_val = sim.loadIntegerStrided(b, i)
 
@@ -93,7 +112,6 @@ def Multiply(sim: Simulator, a: int, b: int, z: int, c=None, mask=None):
     """
 
     for i in mask:
-
         a_val = sim.loadIntegerStrided(a, i)
         b_val = sim.loadIntegerStrided(b, i)
         c_val = sim.loadIntegerStrided(c, i) if c else 0
@@ -118,41 +136,3 @@ def InnerProduct(sim: Simulator, n: int, x: List[int], y: List[int], z: int, mas
 
     for i in range(n):
         Multiply(sim, x[i], y[i], z, z, mask)
-
-
-def FullPrecisionMV(sim: Simulator, m: int, n: int, alpha: int):
-    """
-    Performs the MatPIM full-precision matrix-vector multiplication algorithm.
-    :param sim: the simulation environment
-    :param m: the number of rows in the matrix
-    :param n: the number of columns in the matrix
-    :param alpha: the number of blocks
-    """
-
-    # The effective number of elements per row from the vector
-    na = n // alpha
-
-    # Clone x along rows
-    for a in range(alpha):
-        VBroadcast(sim, a * m, list(range(a * m, a * m + m)), list(range(na, 2*na)))
-
-    # Perform inner product in parallel
-    InnerProduct(sim, na, list(range(na)), list(range(na, 2*na)), 2*na, list(range(alpha * m)))
-
-    # Perform reduction
-    a = alpha
-    while a > 1:
-
-        blocks_to_shift = range(alpha//a, alpha, 2*alpha//a)
-        blocks_to_receive = range(0, alpha, 2*alpha//a)
-
-        # Shift right
-        Move(sim, 2*na, 2*na + 1, mask=list(range(alpha * m)))
-
-        # Perform VCOPY
-        VCOPY(sim, sum([list(range(start*m, start*m+m)) for start in blocks_to_shift], []), sum([list(range(start*m, start*m+m)) for start in blocks_to_receive], []), [2*na + 1])
-
-        # Perform addition
-        Add(sim, 2*na, 2*na + 1, 2*na, mask=list(range(alpha * m)))
-
-        a //= 2
