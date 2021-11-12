@@ -79,7 +79,7 @@ class Simulator:
         self.r = sum(row_partition_sizes)
         self.c = sum(col_partition_sizes)
         self.device = device
-        self.memory = torch.zeros(self.r, self.c, dtype=torch.bool, device=device)
+        self.memory = torch.zeros(self.r + 1, self.c, dtype=torch.bool, device=device)
 
         # Initialize the partition address translation
         self.kr = len(row_partition_sizes)
@@ -130,7 +130,7 @@ class Simulator:
         :param operation: the operation to perform
         """
 
-        mask = operation.mask if operation.mask else list(range(self.r if operation.gateDirection == GateDirection.IN_ROW else self.c))
+        mask = operation.mask if operation.mask is not None else list(range(self.r if operation.gateDirection == GateDirection.IN_ROW else self.c))
 
         if operation.gateType == GateType.NOT:
 

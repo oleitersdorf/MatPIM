@@ -15,7 +15,7 @@ def FullPrecisionMV(sim: Simulator, m: int, n: int, alpha: int):
 
     # Clone x along rows
     for a in range(alpha):
-        VBroadcast(sim, a * m, list(range(a * m, a * m + m)), list(range(na, 2*na)))
+        VBroadcast(sim, a * m, list(range(a * m + 1, a * m + m)), list(range(na, 2*na)))
 
     # Perform inner product in parallel
     InnerProduct(sim, na, list(range(na)), list(range(na, 2*na)), 2*na, list(range(alpha * m)))
@@ -28,7 +28,7 @@ def FullPrecisionMV(sim: Simulator, m: int, n: int, alpha: int):
         blocks_to_receive = range(0, alpha, 2*alpha//a)
 
         # Shift right
-        Move(sim, 2*na, 2*na + 1, mask=list(range(alpha * m)))
+        MoveNOT(sim, 2 * na, 2 * na + 1, mask=list(range(alpha * m)))
 
         # Perform VCOPY
         VCOPY(sim, sum([list(range(start*m, start*m+m)) for start in blocks_to_shift], []), sum([list(range(start*m, start*m+m)) for start in blocks_to_receive], []), [2*na + 1])

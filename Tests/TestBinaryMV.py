@@ -16,7 +16,7 @@ def testBinaryMV():
     c = 1024
     kc = 32
     m = 1024
-    n = 448
+    n = 384
 
     np = n // (c // kc)
 
@@ -48,6 +48,7 @@ def testBinaryMV():
     x = x.to(dtype=torch.int) * 2 - 1
 
     assert((output == (torch.matmul(A, x) >= 0)).all())
+    print(f'Success with {sim.latency} cycles and {sim.energy} energy\n')
 
 
 if __name__ == "__main__":

@@ -1,28 +1,26 @@
+import torch
 from typing import List
-from Simulator.simulator import Simulator
-from MatPIM.Utilities import *
+from Simulator.simulator import Simulator, ParallelOperation, Operation, GateType, GateDirection
 
 
-def Move(sim: Simulator, a: int, b: int, mask=None):
+def MoveNOT(sim: Simulator, a: int, b: int, mask=None):
     """
-    Copies the value from register a to register b in all rows of the mask
+    Copies the value from register a to register b in all rows of the mask, copies notted
     :param sim: the simulation environment
     :param a: the intra-partition index of the input
     :param b: the intra-partition index of the output
     :param mask: the row mask
     """
 
-    for i in mask:
-        sim.storeIntegerStrided(sim.loadIntegerStrided(a, i), b, i)
-
-    # TODO
-    sim.latency += 2
-    sim.energy += 64
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        [sim.relToAbsCol(j, b) for j in range(sim.kc)], mask)]))
+    sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, a)], [sim.relToAbsCol(j, b)], mask) for j in range(sim.kc)]))
 
 
 def VCOPY(sim: Simulator, a_s: List[int], b_s: List[int], regs: List[int]):
     """
-    Copies from rows a_s to rows b_s the values of registers regs
+    Copies from rows a_s to rows b_s the values of registers regs, copies notted
     :param sim: the simulation environment
     :param a_s: the list of input rows
     :param b_s: the list of output rows
@@ -31,13 +29,13 @@ def VCOPY(sim: Simulator, a_s: List[int], b_s: List[int], regs: List[int]):
 
     assert (len(a_s) == len(b_s))
 
-    for a, b in zip(a_s, b_s):
-        for reg in regs:
-            sim.storeIntegerStrided(sim.loadIntegerStrided(reg, a), reg, b)
+    sim.perform(ParallelOperation(
+        [Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in regs], []), torch.LongTensor(b_s))]))
 
-    # TODO
-    sim.latency += 1 + len(a_s)
-    sim.energy += len(a_s) * len(regs) * 32 * 2
+    for a, b in zip(a_s, b_s):
+        sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_COLUMN, [a], [b],
+        torch.LongTensor(sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in regs], [])))]))
 
 
 def VBroadcast(sim: Simulator, a: int, b_s: List[int], regs: List[int]):
@@ -48,13 +46,21 @@ def VBroadcast(sim: Simulator, a: int, b_s: List[int], regs: List[int]):
     :param b_s: the list of output rows
     :param regs: the registers to move
     """
-    for b in b_s:
-        for reg in regs:
-            sim.storeIntegerStrided(sim.loadIntegerStrided(reg, a), reg, b)
 
-    # TODO
-    sim.latency += 1 + len(b_s)
-    sim.energy += len(b_s) * len(regs) * 32
+    assert(len(b_s) >= 2)
+
+    sim.perform(ParallelOperation(
+        [Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+                   sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in regs], []), torch.LongTensor(b_s + [sim.r]))]))
+
+    # Copy first to intermediate row (sim.r), then from sim.r to rest (as NOT and not copy)
+
+    sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_COLUMN, [a], [sim.r],
+        torch.LongTensor(sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in regs], [])))]))
+
+    for b in b_s:
+        sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_COLUMN, [sim.r], [b],
+        torch.LongTensor(sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in regs], [])))]))
 
 
 def XNOR(sim: Simulator, a: int, b: int, z: int, mask=None):
@@ -74,8 +80,8 @@ def XNOR(sim: Simulator, a: int, b: int, z: int, mask=None):
         sim.storeIntegerStrided(~(a_val ^ b_val), z, i)
 
     # TODO
-    sim.latency += 2
-    sim.energy += 64
+    sim.latency += 3
+    sim.energy += 3 * 32
 
 
 def Add(sim: Simulator, a: int, b: int, z: int, mask=None):
