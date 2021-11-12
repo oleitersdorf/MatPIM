@@ -91,6 +91,9 @@ class Simulator:
         self.latency = 0
         self.energy = 0
 
+        # For the register interpretation of the crossbar
+        self.num_regs = self.c // self.kc
+
     def relToAbsRow(self, partition, index):
         """
         Converts a row address from (partition, intra-partition index) to a global address

@@ -19,7 +19,7 @@ def BinaryMV(sim: Simulator, m: int, n: int):
 
     # Perform XNOR in parallel
     for j in range(np):
-        XNOR(sim, j, np + j, np + j, list(range(m)))
+        XNOR(sim, j, np + j, list(range(m)))
 
     # Perform intra-partition popcount
     sim.latency += 6*(np // 3)  # TODO

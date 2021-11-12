@@ -63,25 +63,33 @@ def VBroadcast(sim: Simulator, a: int, b_s: List[int], regs: List[int]):
         torch.LongTensor(sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in regs], [])))]))
 
 
-def XNOR(sim: Simulator, a: int, b: int, z: int, mask=None):
+def XNOR(sim: Simulator, a: int, b: int, mask=None, intermediates=None):
     """
-    Performs a row-parallel XNOR on numbers stored in indices a and b, storing the result in z.
+    Performs a row-parallel XNOR on numbers stored in indices a and b, storing the result in b.
     :param sim: the simulation environment
     :param a: the intra-partition index of the first number
-    :param b: the intra-partition index of the second number
-    :param z: the intra-partition index of the output
+    :param b: the intra-partition index of the second number, and the output
     :param mask: the row mask
+    :param intermediates: intermediate registers than are used
     """
 
-    for i in mask:
-        a_val = sim.loadIntegerStrided(a, i)
-        b_val = sim.loadIntegerStrided(b, i)
+    if intermediates is None:
+        intermediates = [sim.num_regs - 3, sim.num_regs - 2, sim.num_regs - 1]
 
-        sim.storeIntegerStrided(~(a_val ^ b_val), z, i)
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        sum([[sim.relToAbsCol(j, intermediates[0]), sim.relToAbsCol(j, intermediates[1]),
+              sim.relToAbsCol(j, intermediates[2])] for j in range(sim.kc)], []), mask)]))
 
-    # TODO
-    sim.latency += 3
-    sim.energy += 3 * 32
+    sim.perform(ParallelOperation([Operation(GateType.NOR, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, a), sim.relToAbsCol(j, b)], [sim.relToAbsCol(j, intermediates[0])], mask) for j in range(sim.kc)]))
+    sim.perform(ParallelOperation([Operation(GateType.NOR, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, a), sim.relToAbsCol(j, intermediates[0])], [sim.relToAbsCol(j, intermediates[1])], mask) for j in range(sim.kc)]))
+    sim.perform(ParallelOperation([Operation(GateType.NOR, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, b), sim.relToAbsCol(j, intermediates[0])], [sim.relToAbsCol(j, intermediates[2])], mask) for j in range(sim.kc)]))
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        [sim.relToAbsCol(j, b) for j in range(sim.kc)], mask)]))
+    sim.perform(ParallelOperation([Operation(GateType.NOR, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, intermediates[1]), sim.relToAbsCol(j, intermediates[2])], [sim.relToAbsCol(j, b)], mask) for j in range(sim.kc)]))
 
 
 def Add(sim: Simulator, a: int, b: int, z: int, mask=None):
