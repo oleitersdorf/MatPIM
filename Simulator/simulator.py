@@ -56,11 +56,9 @@ class ParallelOperation:
     def __init__(self, ops: List[Operation]):
         """
         Constructs a parallel operation object
-        :param gates: the set of column ops that construct the overall operation
+        :param ops: the set of column ops that construct the overall operation
         """
         self.ops = ops
-        # TODO: Check collision
-
 
 class Simulator:
     """
@@ -86,6 +84,8 @@ class Simulator:
         self.kc = len(col_partition_sizes)
         self.row_partition_starts = [sum(row_partition_sizes[:i]) for i in range(self.kr)]
         self.col_partition_starts = [sum(col_partition_sizes[:i]) for i in range(self.kc)]
+        self.row_addr_to_partition = sum([[i] * row_partition_sizes[i] for i in range(self.kr)], [])
+        self.col_addr_to_partition = sum([[i] * col_partition_sizes[i] for i in range(self.kc)], [])
 
         # Initialize the counters
         self.latency = 0
@@ -117,6 +117,17 @@ class Simulator:
         Performs the given parallel operation on the simulation crossbar
         :param parallelOp: the parallel operation to perform
         """
+
+        # Verify they do not collide
+        translation = self.col_addr_to_partition if parallelOp.ops[0].gateDirection == GateDirection.IN_ROW else self.row_addr_to_partition
+        for op1 in parallelOp.ops:
+            for op2 in parallelOp.ops:
+                if op1 != op2:
+                    first_addrs = (min(op1.inputs + op1.outputs), max(op1.inputs + op1.outputs))
+                    second_addrs = (min(op2.inputs + op2.outputs), max(op2.inputs + op2.outputs))
+                    first_partitions = (translation[first_addrs[0]], translation[first_addrs[1]])
+                    second_partitions = (translation[second_addrs[0]], translation[second_addrs[1]])
+                    assert(not ((first_partitions[0] <= second_partitions[1]) and (first_partitions[1] >= second_partitions[0])))
 
         for op in parallelOp.ops:
             self.performOperation(op)
