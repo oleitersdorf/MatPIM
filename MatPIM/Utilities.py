@@ -70,7 +70,7 @@ def XNOR(sim: Simulator, a: int, b: int, mask=None, intermediates=None):
     :param a: the intra-partition index of the first number
     :param b: the intra-partition index of the second number, and the output
     :param mask: the row mask
-    :param intermediates: intermediate registers than are used
+    :param intermediates: intermediate registers that are used
     """
 
     if intermediates is None:
@@ -92,25 +92,48 @@ def XNOR(sim: Simulator, a: int, b: int, mask=None, intermediates=None):
         [sim.relToAbsCol(j, intermediates[1]), sim.relToAbsCol(j, intermediates[2])], [sim.relToAbsCol(j, b)], mask) for j in range(sim.kc)]))
 
 
-def Add(sim: Simulator, a: int, b: int, z: int, mask=None):
+def Add(sim: Simulator, a: int, b: int, mask=None, intermediate=None):
     """
-    Performs a row-parallel addition on numbers stored in indices a and b, storing the result in z.
+    Performs a bit-serial row-parallel addition on numbers stored in indices a and b, storing the result in b.
     :param sim: the simulation environment
     :param a: the intra-partition index of the first number
-    :param b: the intra-partition index of the second number
-    :param z: the intra-partition index of the output
+    :param b: the intra-partition index of the second number, and the output register
     :param mask: the row mask
+    :param intermediate: intermediate register that used
     """
 
-    for i in mask:
-        a_val = sim.loadIntegerStrided(a, i)
-        b_val = sim.loadIntegerStrided(b, i)
+    if intermediate is None:
+        intermediate = sim.num_regs - 1
 
-        sim.storeIntegerStrided(a_val + b_val, z, i)
+    sim.perform(ParallelOperation([Operation(GateType.INIT0, GateDirection.IN_ROW, [], [sim.relToAbsCol(0, intermediate)], mask)]))
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        [sim.relToAbsCol(1, intermediate), sim.relToAbsCol(2, intermediate), sim.relToAbsCol(3, intermediate), sim.relToAbsCol(4, intermediate)], mask)]))
 
-    # TODO
-    sim.latency += 160
-    sim.energy += 160
+    for k in reversed(range(sim.kc)):
+
+        # Legend
+        carry_loc = (0 if k % 2 == 1 else 1)
+        new_carry_loc = (1 if k % 2 == 1 else 0)
+        not_carry_loc = (2 if k % 2 == 1 else 3)
+        new_not_carry_loc = (3 if k % 2 == 1 else 2)
+        temp_loc = 4
+
+        sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+            [sim.relToAbsCol(k, a), sim.relToAbsCol(k, b), sim.relToAbsCol(carry_loc, intermediate)], [sim.relToAbsCol(new_not_carry_loc, intermediate)], mask)]))
+        sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+            [sim.relToAbsCol(new_not_carry_loc, intermediate)], [sim.relToAbsCol(new_carry_loc, intermediate)], mask)]))
+        sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+            [sim.relToAbsCol(k, a), sim.relToAbsCol(k, b), sim.relToAbsCol(not_carry_loc, intermediate)], [sim.relToAbsCol(temp_loc, intermediate)], mask)]))
+
+        sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+            [sim.relToAbsCol(k, b)], mask)]))
+
+        sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+            [sim.relToAbsCol(new_carry_loc, intermediate), sim.relToAbsCol(not_carry_loc, intermediate),
+            sim.relToAbsCol(temp_loc, intermediate)], [sim.relToAbsCol(k, b)], mask)]))
+
+        sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+            [sim.relToAbsCol(temp_loc, intermediate), sim.relToAbsCol(carry_loc, intermediate), sim.relToAbsCol(not_carry_loc, intermediate)], mask)]))
 
 
 def Multiply(sim: Simulator, a: int, b: int, z: int, c=None, mask=None):

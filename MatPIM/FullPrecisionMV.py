@@ -34,6 +34,6 @@ def FullPrecisionMV(sim: Simulator, m: int, n: int, alpha: int):
         VCOPY(sim, sum([list(range(start*m, start*m+m)) for start in blocks_to_shift], []), sum([list(range(start*m, start*m+m)) for start in blocks_to_receive], []), [2*na + 1])
 
         # Perform addition
-        Add(sim, 2*na, 2*na + 1, 2*na, mask=list(range(alpha * m)))
+        Add(sim, 2*na + 1, 2*na, mask=list(range(alpha * m)))
 
         a //= 2

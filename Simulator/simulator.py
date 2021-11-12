@@ -177,12 +177,18 @@ class Simulator:
                 self.memory[mask, operation.outputs[0]] = torch.bitwise_and(self.memory[mask, operation.outputs[0]],
                 torch.bitwise_not(torch.bitwise_or(torch.bitwise_and(self.memory[mask, operation.inputs[0]], self.memory[mask, operation.inputs[1]]),
                                      torch.bitwise_or(
-                                         torch.bitwise_and(self.memory[mask, operation.inputs[0]], self.memory[mask, operation.inputs[1]]),
-                                         torch.bitwise_and(self.memory[mask, operation.inputs[0]], self.memory[mask, operation.inputs[1]])
+                                         torch.bitwise_and(self.memory[mask, operation.inputs[0]], self.memory[mask, operation.inputs[2]]),
+                                         torch.bitwise_and(self.memory[mask, operation.inputs[1]], self.memory[mask, operation.inputs[2]])
                                      ))))
             else:
                 self.memory[operation.outputs[0], mask] = torch.bitwise_and(self.memory[operation.outputs[0], mask],
                 torch.bitwise_not(torch.bitwise_or(self.memory[operation.inputs[0], mask], self.memory[operation.inputs[1], mask])))
+                self.memory[operation.outputs[0], mask] = torch.bitwise_and(self.memory[operation.outputs[0], mask],
+                torch.bitwise_not(torch.bitwise_or(torch.bitwise_and(self.memory[operation.inputs[0], mask], self.memory[operation.inputs[1], mask]),
+                                     torch.bitwise_or(
+                                         torch.bitwise_and(self.memory[operation.inputs[0], mask], self.memory[operation.inputs[2], mask]),
+                                         torch.bitwise_and(self.memory[operation.inputs[1], mask], self.memory[operation.inputs[2], mask])
+                                     ))))
 
         elif operation.gateType == GateType.INIT0:
 
