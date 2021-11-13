@@ -60,6 +60,7 @@ class ParallelOperation:
         """
         self.ops = ops
 
+
 class Simulator:
     """
     Simulates a single crossbar that supports stateful logic with partitions along both dimensions
