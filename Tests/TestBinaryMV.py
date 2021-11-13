@@ -1,6 +1,7 @@
 import torch
 from Simulator.simulator import Simulator
 from MatPIM.BinaryMV import BinaryMV
+from math import ceil, log2
 
 device = torch.device('cpu')
 
@@ -40,14 +41,14 @@ def testBinaryMV():
     BinaryMV(sim, m, n)
 
     # Verify the results
-    output = torch.zeros(m, dtype=torch.bool, device=device)
+    output = torch.zeros(m, dtype=torch.int, device=device)
     for i in range(m):
-        output[i] = sim.memory[i][c-1]
+        output[i] = sum([int(sim.memory[i][np + r]) << r for r in range(ceil(log2(n)))])
 
     A = A.to(dtype=torch.int) * 2 - 1
     x = x.to(dtype=torch.int) * 2 - 1
 
-    assert((output == (torch.matmul(A, x) >= 0)).all())
+    assert((output == (torch.matmul(A, x) // 2 + n // 2)).all())
     print(f'Success with {sim.latency} cycles and {sim.energy} energy\n')
 
 

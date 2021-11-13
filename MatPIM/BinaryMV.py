@@ -13,6 +13,8 @@ def BinaryMV(sim: Simulator, m: int, n: int):
     # The number of bits per partition
     np = n // sim.kc
 
+    intermediates = list(range(2 * np, n))
+
     # Clone x along rows
     sim.perform(ParallelOperation(
         [Operation(GateType.INIT1, GateDirection.IN_ROW, [],
@@ -35,47 +37,142 @@ def BinaryMV(sim: Simulator, m: int, n: int):
         XNOR(sim, j, np + j, list(range(m)))
 
     # Perform intra-partition popcount
-    sim.latency += 6*(np // 3)  # TODO
-    sim.latency += 6 * 7
-    for i in range(m):
-        for j in range(sim.kc):
+    for k in range(0, np, 3):
+        sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+            [sim.relToAbsCol(partition, intermediates[0]), sim.relToAbsCol(partition, intermediates[1]),
+             sim.relToAbsCol(partition, intermediates[2])]) for partition in range(sim.kc)]))
 
-            # Divide into groups of three
-            for k in range(0, np, 3):
-                a = sim.memory[i][sim.relToAbsCol(j, np + k)]
-                b = sim.memory[i][sim.relToAbsCol(j, np + k + 1)]
-                c = sim.memory[i][sim.relToAbsCol(j, np + k + 2)]
-                sout = a ^ b ^ c
-                cout = (a & b) | (a & c) | (b & c)
-                sim.memory[i][sim.relToAbsCol(j, np + k)] = sout
-                sim.memory[i][sim.relToAbsCol(j, np + k + 1)] = cout
-                # sim.latency += 6
+        sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+            [sim.relToAbsCol(j, np + k)], [sim.relToAbsCol(j, intermediates[0])]) for j in range(sim.kc)]))
+        sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+            [sim.relToAbsCol(j, np + k), sim.relToAbsCol(j, np + k + 1), sim.relToAbsCol(j, np + k + 2)],
+            [sim.relToAbsCol(j, intermediates[1])]) for j in range(sim.kc)]))
+        sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+            [sim.relToAbsCol(j, np + k + 2), sim.relToAbsCol(j, np + k + 1), sim.relToAbsCol(j, intermediates[0])],
+            [sim.relToAbsCol(j, intermediates[2])]) for j in range(sim.kc)]))
 
-            # Perform intra-partition addition tree
-            # a = (np // 3)
-            # while a > 1:
-            #
-            #     for k in range(a // 2):
-            #
-            #         # Add the numbers in [np + k*(np//a) : np + k*(np//a) + ceil(log2(np // a))] and
-            #         # [np + k*(np//a) : np + k*(np//a) + ceil(log2(np // a))]
-            #
-            #     a /= 2
+        sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+            [sim.relToAbsCol(partition, np + k), sim.relToAbsCol(partition, np + k + 1),
+             ]) for partition in range(sim.kc)]))
 
-            s = 0
-            for k in range(0, np, 3):
-                s += (sim.memory[i][sim.relToAbsCol(j, np + k)]) + (int(sim.memory[i][sim.relToAbsCol(j, np + k + 1)]) << 1)
-            # sim.latency += 6 * 7
-            for k in range(ceil(log2(np))):
-                sim.memory[i][sim.relToAbsCol(j, np + k)] = bool(s & (1 << k))
+        sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+            [sim.relToAbsCol(j, intermediates[1])], [sim.relToAbsCol(j, np + k + 1)]) for j in range(sim.kc)]))
+        sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+            [sim.relToAbsCol(j, np + k + 1), sim.relToAbsCol(j, intermediates[0]), sim.relToAbsCol(j, intermediates[2])],
+            [sim.relToAbsCol(j, np + k)]) for j in range(sim.kc)]))
+
+    # Perform intra-partition addition tree
+    a = (np // 3)
+    while a > 1:
+
+        for p in range(a // 2):
+
+            # In each partition, add the numbers represented by first_num and second_num
+            first_num = np + 2 * p * (np // a)
+            second_num = np + (2 * p + 1) * (np // a)
+            rep_size = ceil(log2(np // a))
+
+            sim.perform(ParallelOperation(
+                [Operation(GateType.INIT0, GateDirection.IN_ROW, [], [sim.relToAbsCol(j, intermediates[0])])
+                 for j in range(sim.kc)]))
+            sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+                [sim.relToAbsCol(j, intermediates[1]), sim.relToAbsCol(j, intermediates[2]),
+                sim.relToAbsCol(j, intermediates[3]), sim.relToAbsCol(j, intermediates[4])])
+                for j in range(sim.kc)]))
+
+            for k in range(rep_size):
+
+                # Legend
+                carry_loc = intermediates[(0 if k % 2 == 0 else 1)]
+                new_carry_loc = intermediates[(1 if k % 2 == 0 else 0)]
+                not_carry_loc = intermediates[(2 if k % 2 == 0 else 3)]
+                new_not_carry_loc = intermediates[(3 if k % 2 == 0 else 2)]
+                temp_loc = intermediates[4]
+
+                sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+                    [sim.relToAbsCol(j, first_num + k), sim.relToAbsCol(j, second_num + k),
+                     sim.relToAbsCol(j, carry_loc)], [sim.relToAbsCol(j, new_not_carry_loc)])
+                    for j in range(sim.kc)]))
+                sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+                    [sim.relToAbsCol(j, new_not_carry_loc)], [sim.relToAbsCol(j, new_carry_loc)])
+                    for j in range(sim.kc)]))
+                sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+                    [sim.relToAbsCol(j, first_num + k), sim.relToAbsCol(j, second_num + k),
+                     sim.relToAbsCol(j, not_carry_loc)], [sim.relToAbsCol(j, temp_loc)])
+                    for j in range(sim.kc)]))
+
+                sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+                    [sim.relToAbsCol(j, first_num + k)] + ([sim.relToAbsCol(j, first_num + k + 1)] if k == (rep_size - 1) else []))
+                    for j in range(sim.kc)]))
+
+                sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+                    [sim.relToAbsCol(j, new_carry_loc), sim.relToAbsCol(j, not_carry_loc),
+                    sim.relToAbsCol(j, temp_loc)], [sim.relToAbsCol(j, first_num + k)])
+                    for j in range(sim.kc)]))
+
+                if k == (rep_size - 1):
+                    sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+                        [sim.relToAbsCol(j, new_not_carry_loc)], [sim.relToAbsCol(j, first_num + k + 1)])
+                        for j in range(sim.kc)]))
+
+                sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+                    [sim.relToAbsCol(j, temp_loc), sim.relToAbsCol(j, carry_loc), sim.relToAbsCol(j, not_carry_loc)])
+                    for j in range(sim.kc)]))
+        a //= 2
 
     # Perform tree addition
-    sim.latency += 30 * 5
-    for i in range(m):
-        s = 0
-        for j in range(sim.kc):
-            sp = 0
-            for k in range(ceil(log2(np))):
-                sp += int(sim.memory[i][sim.relToAbsCol(j, np + k)]) << k
-            s += sp
-        sim.memory[i][sim.c - 1] = (s >= (n // 2))
+    a = sim.kc
+    while a > 1:
+
+        first_nums = [2*p*(sim.kc // a) for p in range(a // 2)]
+        second_nums = [(2*p+1)*(sim.kc // a) for p in range(a // 2)]
+        rep_size = ceil(log2(np)) + (ceil(log2(sim.kc // a)))
+
+        sim.perform(ParallelOperation(
+                [Operation(GateType.INIT0, GateDirection.IN_ROW, [], [sim.relToAbsCol(first_nums[p], intermediates[0])])
+                 for p in range(a // 2)]))
+        sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+                [sim.relToAbsCol(first_nums[p], intermediates[1]), sim.relToAbsCol(first_nums[p], intermediates[2]),
+                sim.relToAbsCol(first_nums[p], intermediates[3]), sim.relToAbsCol(first_nums[p], intermediates[4])])
+                for p in range(a // 2)]))
+
+        for k in range(rep_size):
+
+            # Legend
+            carry_loc = intermediates[(0 if k % 2 == 0 else 1)]
+            new_carry_loc = intermediates[(1 if k % 2 == 0 else 0)]
+            not_carry_loc = intermediates[(2 if k % 2 == 0 else 3)]
+            new_not_carry_loc = intermediates[(3 if k % 2 == 0 else 2)]
+            temp_loc = intermediates[4]
+
+            sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+                [sim.relToAbsCol(first_nums[p], np + k), sim.relToAbsCol(second_nums[p], np + k),
+                 sim.relToAbsCol(first_nums[p], carry_loc)], [sim.relToAbsCol(first_nums[p], new_not_carry_loc)])
+                for p in range(a // 2)]))
+            sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+                [sim.relToAbsCol(first_nums[p], new_not_carry_loc)], [sim.relToAbsCol(first_nums[p], new_carry_loc)])
+                for p in range(a // 2)]))
+            sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+                [sim.relToAbsCol(first_nums[p], np + k), sim.relToAbsCol(second_nums[p], np + k),
+                 sim.relToAbsCol(first_nums[p], not_carry_loc)], [sim.relToAbsCol(first_nums[p], temp_loc)])
+                for p in range(a // 2)]))
+
+            sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+                [sim.relToAbsCol(first_nums[p], np + k)] + ([sim.relToAbsCol(first_nums[p], np + k + 1)] if k == (rep_size - 1) else []))
+                for p in range(a // 2)]))
+
+            sim.perform(ParallelOperation([Operation(GateType.MIN3, GateDirection.IN_ROW,
+                [sim.relToAbsCol(first_nums[p], new_carry_loc), sim.relToAbsCol(first_nums[p], not_carry_loc),
+                sim.relToAbsCol(first_nums[p], temp_loc)], [sim.relToAbsCol(first_nums[p], np + k)])
+                for p in range(a // 2)]))
+
+            if k == (rep_size - 1):
+                sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+                    [sim.relToAbsCol(first_nums[p], new_not_carry_loc)], [sim.relToAbsCol(first_nums[p], np + k + 1)])
+                    for p in range(a // 2)]))
+
+            sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+                [sim.relToAbsCol(first_nums[p], temp_loc), sim.relToAbsCol(first_nums[p], carry_loc), sim.relToAbsCol(first_nums[p], not_carry_loc)])
+                for p in range(a // 2)]))
+
+        a //= 2
