@@ -14,8 +14,21 @@ def BinaryMV(sim: Simulator, m: int, n: int):
     np = n // sim.kc
 
     # Clone x along rows
-    VBroadcast(sim, 0, list(range(1, m)), list(range(np, 2 * np)))
-    sim.latency = 40  # TODO (partition-based broadcast)
+    sim.perform(ParallelOperation(
+        [Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in range(np, 2 * np)], []), torch.LongTensor(list(range(1, m))))]))
+
+    log2_kr = sim.kr.bit_length() - 1
+    for i in range(log2_kr):
+        sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+            [sim.relToAbsRow(j, 0), sim.relToAbsRow(j, 0)],
+            [sim.relToAbsRow(j + (sim.kr >> (i + 1)), 0)],
+            torch.LongTensor(sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in range(np, 2 * np)], [])))
+            for j in range(0, sim.kr, 1 << (log2_kr - i))]))
+    for k in range(1, m // sim.kr):
+        sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN, [sim.relToAbsRow(p, 0), sim.relToAbsRow(p, 0)],
+            [sim.relToAbsRow(p, k)], torch.LongTensor(sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in range(np, 2 * np)], [])))
+            for p in range(sim.kr)]))
 
     # Perform XNOR in parallel
     for j in range(np):
