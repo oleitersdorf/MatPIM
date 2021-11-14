@@ -20,7 +20,8 @@ def testFullPrecisionConv():
     c = 1024
     m = 1024
     n = 8
-    k = 3
+    k = 5
+    alpha = n // 8
 
     sim = Simulator([1024], [32] * N, device=device)
 
@@ -34,18 +35,22 @@ def testFullPrecisionConv():
     # Store the vectors in the memory
     for i in range(m):
         for j in range(n):
-            sim.storeIntegerStrided(A[i, j].item(), 3 + j, i)
+            sim.storeIntegerStrided(A[i, j].item(), 1 + k + (j % (n // alpha)), i + (j // (n // alpha)) * m)
     for j in range(k ** 2):
         sim.storeIntegerStrided(K[j // k, j % k].item(), 0, j)
 
     # Run the convolution algorithm
-    FullPrecisionConv(sim, m, n, k)
+    FullPrecisionConv(sim, m, n, k, alpha)
 
     # Verify the results
-    output = torch.zeros((m - (k // 2 + 1), n - (k // 2 + 1)), dtype=torch.long, device=device)
-    for i in range(m - (k // 2 + 1)):
-        for j in range(n - (k // 2 + 1)):
-            output[i][j] = sim.loadIntegerStrided(3 + n + 1 + j, i)
+    output = torch.zeros((m - (k - 1), n), dtype=torch.long, device=device)
+    for i in range(m - (k - 1)):
+        for j in range(n):
+            output[i][j] = sim.loadIntegerStrided(1 + k + n//alpha + (j % (n // alpha)), i + (j // (n // alpha)) * m)
+    if alpha > 1:
+        output = output[:, (k-1):]
+    else:
+        output = output[:, :(n-(k-1))]
 
     assert((output == (torch.nn.functional.conv2d(A.reshape(1, 1, m, n), K.reshape(1, 1, k, k)) % (1 << N))).all())
     print(f'Success with {sim.latency} cycles and {sim.energy} energy\n')
