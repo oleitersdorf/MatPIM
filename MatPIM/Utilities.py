@@ -3,6 +3,21 @@ from typing import List
 from Simulator.simulator import Simulator, ParallelOperation, Operation, GateType, GateDirection
 
 
+def Move(sim: Simulator, a: int, b: int, mask=None):
+    """
+    Copies the value from register a to register b in all rows of the mask
+    :param sim: the simulation environment
+    :param a: the intra-partition index of the input
+    :param b: the intra-partition index of the output
+    :param mask: the row mask
+    """
+
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        [sim.relToAbsCol(j, b) for j in range(sim.kc)], mask)]))
+    sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, a), sim.relToAbsCol(j, a)], [sim.relToAbsCol(j, b)], mask) for j in range(sim.kc)]))
+
+
 def MoveNOT(sim: Simulator, a: int, b: int, mask=None):
     """
     Copies the value from register a to register b in all rows of the mask, copies notted
