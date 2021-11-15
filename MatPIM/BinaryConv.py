@@ -171,20 +171,129 @@ def BinaryConv(sim: Simulator, m: int, n: int, k: int):
 
             # Rotate A
             if vert < k-1:
-                # mask = torch.LongTensor(sum([[sim.relToAbsCol(part, overlap + a) for a in range(k-1+na)] for part in range(sim.kc)], []))
-                # sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
-                #     [0, 0], [sim.r], mask)]))
-                # sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
-                #     [sim.relToAbsRow(part + 1, 0), sim.relToAbsRow(part + 1, 0)], [sim.r], mask) for part in range(0, sim.kr - 1, 2)]))
-                for aaa in range(sim.kc):
-                    sim.memory[:, sim.relToAbsCol(aaa, overlap):(sim.relToAbsCol(aaa, overlap)+k-1+na)] = \
-                        torch.roll(sim.memory[:, sim.relToAbsCol(aaa, overlap):(sim.relToAbsCol(aaa, overlap)+k-1+na)], -1, dims=0)
-                sim.latency += 32*4
 
-        for aaa in range(sim.kc):
-            sim.memory[:, sim.relToAbsCol(aaa, overlap):(sim.relToAbsCol(aaa, overlap)+k-1+na)] = \
-                torch.roll(sim.memory[:, sim.relToAbsCol(aaa, overlap):(sim.relToAbsCol(aaa, overlap)+k-1+na)], k-1, dims=0)
-        sim.latency += 32*4
+                # Copy the k columns to K_locs (temporary storage)
+                for i in range(k):
+                    Move(sim, overlap + a + i, K_locs + i)
+
+                # Intra-partition shift
+                sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                    [], sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []),
+                    torch.LongTensor(list(range(0, sim.r, 2))))]))
+                sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                    [], sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], []),
+                    torch.LongTensor(list(range(1, sim.r, 2))))]))
+                for intra_row in range(sim.r // sim.kr):
+                    sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                        [sim.relToAbsRow(row_part, (intra_row + 1) % (sim.r // sim.kr)),
+                         sim.relToAbsRow(row_part, (intra_row + 1) % (sim.r // sim.kr))],
+                        [sim.relToAbsRow(row_part, intra_row)],
+                        torch.LongTensor(
+                            sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if intra_row % 2 == 0 else
+                            sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                        )) for row_part in range(sim.kr)]))
+                for i in range(k):
+                    Move(sim, K_locs + i, overlap + a + i, torch.LongTensor(list(range(1, sim.r, 2))))
+
+                # Inter-partition rotate
+                sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                    [], sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []),
+                    torch.LongTensor([row_part * (sim.r // sim.kr) + (sim.r // sim.kr) - 1 for row_part in range(0, sim.kr, 2)]))]))
+                sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                    [], sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], []),
+                    torch.LongTensor([row_part * (sim.r // sim.kr) + (sim.r // sim.kr) - 1 for row_part in range(1, sim.kr, 2)]))]))
+
+                sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                        [((row_part + 1) % sim.kr) * (sim.r // sim.kr) + (sim.r // sim.kr) - 1,
+                         ((row_part + 1) % sim.kr) * (sim.r // sim.kr) + (sim.r // sim.kr) - 1],
+                        [row_part * (sim.r // sim.kr) + (sim.r // sim.kr) - 1],
+                        torch.LongTensor(
+                            sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if row_part % 2 == 0 else
+                            sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                        )) for row_part in range(0, sim.kr - 1, 2)]))
+                sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                        [((row_part + 1) % sim.kr) * (sim.r // sim.kr) + (sim.r // sim.kr) - 1,
+                         ((row_part + 1) % sim.kr) * (sim.r // sim.kr) + (sim.r // sim.kr) - 1],
+                        [row_part * (sim.r // sim.kr) + (sim.r // sim.kr) - 1],
+                        torch.LongTensor(
+                            sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if row_part % 2 == 0 else
+                            sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                        )) for row_part in range(1, sim.kr - 1, 2)]))
+                sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                        [((row_part + 1) % sim.kr) * (sim.r // sim.kr) + (sim.r // sim.kr) - 1,
+                         ((row_part + 1) % sim.kr) * (sim.r // sim.kr) + (sim.r // sim.kr) - 1],
+                        [row_part * (sim.r // sim.kr) + (sim.r // sim.kr) - 1],
+                        torch.LongTensor(
+                            sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if row_part % 2 == 0 else
+                            sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                        )) for row_part in range(sim.kr - 1, sim.kr)]))
+
+                for i in range(k):
+                    Move(sim, K_locs + i, overlap + a + i, torch.LongTensor([row_part * (sim.r // sim.kr) + (sim.r // sim.kr) - 1 for row_part in range(1, sim.kr, 2)]))
+
+        for _ in range(k-1):
+
+            # Copy the k columns to K_locs (temporary storage)
+            for i in range(k):
+                Move(sim, overlap + a + i, K_locs + i)
+
+            # Intra-partition shift
+            sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                [], sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []),
+                torch.LongTensor(list(range(0, sim.r, 2))))]))
+            sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                [], sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], []),
+                torch.LongTensor(list(range(1, sim.r, 2))))]))
+            for intra_row in range(sim.r // sim.kr):
+                sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                    [sim.relToAbsRow(row_part, (intra_row - 1) % (sim.r // sim.kr)),
+                     sim.relToAbsRow(row_part, (intra_row - 1) % (sim.r // sim.kr))],
+                    [sim.relToAbsRow(row_part, intra_row)],
+                    torch.LongTensor(
+                        sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if intra_row % 2 == 0 else
+                        sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                    )) for row_part in range(sim.kr)]))
+            for i in range(k):
+                Move(sim, K_locs + i, overlap + a + i, torch.LongTensor(list(range(1, sim.r, 2))))
+
+            for i in range(k):
+                Move(sim, overlap + a + i, K_locs + i)
+
+            # Inter-partition rotate
+            sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                [], sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []),
+                torch.LongTensor([row_part * (sim.r // sim.kr) + 0 for row_part in range(0, sim.kr, 2)]))]))
+            sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW,
+                [], sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], []),
+                torch.LongTensor([row_part * (sim.r // sim.kr) + 0 for row_part in range(1, sim.kr, 2)]))]))
+
+            sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                    [((row_part - 1) % sim.kr) * (sim.r // sim.kr) + 0,
+                     ((row_part - 1) % sim.kr) * (sim.r // sim.kr) + 0],
+                    [row_part * (sim.r // sim.kr) + 0],
+                    torch.LongTensor(
+                        sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if row_part % 2 == 0 else
+                        sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                    )) for row_part in range(1, sim.kr, 2)]))
+            sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                    [((row_part - 1) % sim.kr) * (sim.r // sim.kr) + 0,
+                     ((row_part - 1) % sim.kr) * (sim.r // sim.kr) + 0],
+                    [row_part * (sim.r // sim.kr) + 0],
+                    torch.LongTensor(
+                        sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if row_part % 2 == 0 else
+                        sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                    )) for row_part in range(2, sim.kr, 2)]))
+            sim.perform(ParallelOperation([Operation(GateType.OR, GateDirection.IN_COLUMN,
+                    [((row_part - 1) % sim.kr) * (sim.r // sim.kr) + 0,
+                     ((row_part - 1) % sim.kr) * (sim.r // sim.kr) + 0],
+                    [row_part * (sim.r // sim.kr) + 0],
+                    torch.LongTensor(
+                        sum([[sim.relToAbsCol(j, overlap + a + i) for i in range(k)] for j in range(sim.kc)], []) if row_part % 2 == 0 else
+                        sum([[sim.relToAbsCol(j, K_locs + i) for i in range(k)] for j in range(sim.kc)], [])
+                    )) for row_part in range(0, 1)]))
+
+            for i in range(k):
+                Move(sim, K_locs + i, overlap + a + i, torch.LongTensor([row_part * (sim.r // sim.kr) + 0 for row_part in range(1, sim.kr, 2)]))
 
         # Check if >= k // 2 + 1, in this case k >= 5
         # Check using (bit4 and (either bit1 or bit2)) or bit8
