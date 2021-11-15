@@ -78,6 +78,54 @@ def VBroadcast(sim: Simulator, a: int, b_s: List[int], regs: List[int]):
         torch.LongTensor(sum([[sim.relToAbsCol(j, r) for j in range(sim.kc)] for r in regs], [])))]))
 
 
+def AND(sim: Simulator, a: int, b: int, mask=None, intermediates=None):
+    """
+    Performs a row-parallel AND on numbers stored in indices a and b, storing the result in b.
+    :param sim: the simulation environment
+    :param a: the intra-partition index of the first number
+    :param b: the intra-partition index of the second number, and the output
+    :param mask: the row mask
+    :param intermediates: intermediate registers that are used
+    """
+
+    if intermediates is None:
+        intermediates = [sim.num_regs - 1]
+
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        sum([[sim.relToAbsCol(j, intermediates[0])] for j in range(sim.kc)], []), mask)]))
+
+    sim.perform(ParallelOperation([Operation(GateType.NAND, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, a), sim.relToAbsCol(j, b)], [sim.relToAbsCol(j, intermediates[0])], mask) for j in range(sim.kc)]))
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        [sim.relToAbsCol(j, b) for j in range(sim.kc)], mask)]))
+    sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, intermediates[0])], [sim.relToAbsCol(j, b)], mask) for j in range(sim.kc)]))
+
+
+def OR(sim: Simulator, a: int, b: int, mask=None, intermediates=None):
+    """
+    Performs a row-parallel OR on numbers stored in indices a and b, storing the result in b.
+    :param sim: the simulation environment
+    :param a: the intra-partition index of the first number
+    :param b: the intra-partition index of the second number, and the output
+    :param mask: the row mask
+    :param intermediates: intermediate registers that are used
+    """
+
+    if intermediates is None:
+        intermediates = [sim.num_regs - 1]
+
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        sum([[sim.relToAbsCol(j, intermediates[0])] for j in range(sim.kc)], []), mask)]))
+
+    sim.perform(ParallelOperation([Operation(GateType.NOR, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, a), sim.relToAbsCol(j, b)], [sim.relToAbsCol(j, intermediates[0])], mask) for j in range(sim.kc)]))
+    sim.perform(ParallelOperation([Operation(GateType.INIT1, GateDirection.IN_ROW, [],
+        [sim.relToAbsCol(j, b) for j in range(sim.kc)], mask)]))
+    sim.perform(ParallelOperation([Operation(GateType.NOT, GateDirection.IN_ROW,
+        [sim.relToAbsCol(j, intermediates[0])], [sim.relToAbsCol(j, b)], mask) for j in range(sim.kc)]))
+
+
 def XNOR(sim: Simulator, a: int, b: int, mask=None, intermediates=None):
     """
     Performs a row-parallel XNOR on numbers stored in indices a and b, storing the result in b.

@@ -19,7 +19,7 @@ def testBinaryMV():
     m = 1024
     n = 384
 
-    np = n // (c // kc)
+    np = n // kc
 
     sim = Simulator([r // kr] * kr, [c // kc] * kc, device=device)
 

@@ -78,7 +78,7 @@ class Simulator:
         self.r = sum(row_partition_sizes)
         self.c = sum(col_partition_sizes)
         self.device = device
-        self.memory = torch.zeros(self.r + 1, self.c, dtype=torch.bool, device=device)
+        self.memory = torch.zeros(self.r + 1, self.c + 1, dtype=torch.bool, device=device)
 
         # Initialize the partition address translation
         self.kr = len(row_partition_sizes)
